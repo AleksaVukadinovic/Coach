@@ -1,0 +1,12 @@
+{
+  "name": "coach",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Local Apple Health dashboard with LLM-friendly exports",
+  "type": "module",
+  "engines": { "node": ">=22.13" },
+  "scripts": {
+    "start": "node --no-warnings server.js",
+    "import": "node --no-warnings scripts/import.js"
+  }
+}

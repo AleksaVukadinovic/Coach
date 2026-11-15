@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Coach</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%23e34948'/><path d='M7 17h5l2-5 4 10 2-5h5' stroke='white' stroke-width='2.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>">
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <span class="logo" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M7 17h5l2-5 4 10 2-5h5" /></svg></span>
+      <div>
+        <h1>Coach</h1>
+        <p class="sub" id="status">Loading…</p>
+      </div>
+    </div>
+    <div class="actions">
+      <button class="btn ghost" id="btn-import">Import</button>
+      <button class="btn primary" id="btn-claude">For Claude</button>
+    </div>
+  </header>
+
+  <main id="app">
+    <section id="empty" class="empty" hidden>
+      <h2>Bring in your Apple Health data</h2>
+      <ol>
+        <li>On your iPhone open <b>Health</b> → tap your profile picture → <b>Export All Health Data</b>.</li>
+        <li>AirDrop or save <code>export.zip</code> to this Mac.</li>
+        <li>Drop it below. Everything stays on this machine.</li>
+      </ol>
+      <button class="btn primary" id="btn-import-empty">Choose export.zip</button>
+      <p class="hint">Want it to stay up to date automatically? See “Live sync” in the README.</p>
+    </section>
+
+    <div id="dash" hidden>
+      <div class="toolbar">
+        <div class="seg" id="ranges" role="tablist">
+          <button data-range="7">7D</button>
+          <button data-range="30">30D</button>
+          <button data-range="90">90D</button>
+          <button data-range="365">1Y</button>
+          <button data-range="all">All</button>
+        </div>
+        <span class="period" id="period"></span>
+      </div>
+
+      <section class="focus card" id="focus">
+        <div class="focus-head">
+          <div>
+            <div class="eyebrow" id="focus-cat"></div>
+            <h2 id="focus-title"></h2>
+          </div>
+          <div class="focus-stat">
+            <div class="big"><span id="focus-value"></span><span class="unit" id="focus-unit"></span></div>
+            <div class="small" id="focus-delta"></div>
+          </div>
+        </div>
+        <div class="legend" id="focus-legend"></div>
+        <div class="chart" id="focus-chart"></div>
+      </section>
+
+      <div id="sections"></div>
+
+      <div class="two-col">
+        <section class="card" id="workouts-card">
+          <div class="card-head"><h3>Workouts</h3><span class="muted" id="workout-summary"></span></div>
+          <div id="workout-mix" class="chips"></div>
+          <ul class="list" id="workout-list"></ul>
+        </section>
+
+        <section class="card" id="journal-card">
+          <div class="card-head"><h3>Goals & context</h3><span class="muted" id="goals-saved"></span></div>
+          <textarea id="goals" rows="4" placeholder="What are you working towards? Injuries, training plan, diet… This is included in the Claude export."></textarea>
+          <div class="card-head" style="margin-top:20px"><h3>Journal</h3></div>
+          <form id="journal-form" class="journal-form">
+            <input type="date" id="journal-date" required>
+            <input type="text" id="journal-text" placeholder="How did today feel? Sick, stressed, great run…" autocomplete="off">
+            <button class="btn" type="submit">Save</button>
+          </form>
+          <ul class="list journal" id="journal-list"></ul>
+        </section>
+      </div>
+    </div>
+  </main>
+
+  <div class="tooltip" id="tooltip" hidden></div>
+
+  <dialog id="import-dialog">
+    <form method="dialog" class="dlg-head"><h3>Import Apple Health export</h3><button class="icon-btn" aria-label="Close">✕</button></form>
+    <label class="drop" id="drop">
+      <input type="file" id="file" accept=".zip,.xml" hidden>
+      <span class="drop-title">Drop <code>export.zip</code> here</span>
+      <span class="muted">or click to choose · zip or export.xml</span>
+    </label>
+    <div class="progress" id="progress" hidden><div class="bar"><i id="progress-bar"></i></div><span id="progress-text"></span></div>
+    <p class="muted small">Re-importing is safe: days are replaced, never duplicated. On iPhone: Health → profile picture → Export All Health Data.</p>
+  </dialog>
+
+  <dialog id="claude-dialog" class="wide">
+    <form method="dialog" class="dlg-head"><h3>Share with Claude</h3><button class="icon-btn" aria-label="Close">✕</button></form>
+    <p class="muted small">A compact Markdown digest of your data: overview, daily, weekly and monthly tables, workouts, journal and goals. Paste it into a chat or attach the files.</p>
+    <div class="toolbar tight">
+      <label class="muted small">Daily detail
+        <select id="claude-days">
+          <option value="14">14 days</option>
+          <option value="30" selected>30 days</option>
+          <option value="60">60 days</option>
+          <option value="90">90 days</option>
+        </select>
+      </label>
+      <span class="muted small" id="claude-size"></span>
+    </div>
+    <pre class="preview" id="claude-preview"></pre>
+    <div class="dlg-actions">
+      <button class="btn primary" id="copy-md">Copy summary</button>
+      <button class="btn" id="copy-prompt">Copy with coach prompt</button>
+      <a class="btn ghost" id="dl-md" href="#">summary.md</a>
+      <a class="btn ghost" href="/api/export/daily.csv">daily.csv</a>
+      <a class="btn ghost" href="/api/export/workouts.csv">workouts.csv</a>
+    </div>
+    <p class="muted small">Always-current copies are saved to <code id="export-dir"></code></p>
+  </dialog>
+
+  <div class="toast" id="toast" hidden></div>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
