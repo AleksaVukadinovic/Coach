@@ -34,8 +34,10 @@
       <p class="hint">Want it to stay up to date automatically? See “Live sync” in the README.</p>
     </section>
 
-    <div id="dash" hidden>
-      <div class="toolbar">
+    <div id="dash" class="layout" hidden>
+      <nav class="sidebar" id="sidebar" aria-label="Sections"></nav>
+      <div class="content">
+      <div class="toolbar" id="top">
         <div class="seg" id="ranges" role="tablist">
           <button data-range="7">7D</button>
           <button data-range="30">30D</button>
@@ -81,6 +83,7 @@
           </form>
           <ul class="list journal" id="journal-list"></ul>
         </section>
+      </div>
       </div>
     </div>
   </main>

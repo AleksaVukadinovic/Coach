@@ -322,7 +322,7 @@ function renderCards() {
   for (const cat of meta.categories) {
     const ms = meta.metrics.filter(m => m.category === cat.key);
     if (!ms.length) continue;
-    const sec = el('section', { className: 'section' });
+    const sec = el('section', { className: 'section', id: `sec-${cat.key}` });
     sec.append(el('h2', { className: 'section-title' }, `<span class="dot" style="background:${catColor(cat.key)}"></span>${cat.label}`));
     const grid = el('div', { className: 'grid' });
     for (const m of ms) {
@@ -508,6 +508,74 @@ async function renderJournal() {
   }
 }
 
+// ---------- sidebar ----------
+function renderSidebar() {
+  const groups = [
+    ['Dashboard', [{ id: 'top', label: 'Overview', ico: true }]],
+    ['Metrics', meta.categories
+      .map(c => ({ id: `sec-${c.key}`, label: c.label, color: catColor(c.key), count: meta.metrics.filter(m => m.category === c.key).length }))
+      .filter(c => c.count)],
+    ['Training', [{ id: 'workouts-card', label: 'Workouts', ico: true, count: meta.workouts || '' }]],
+    ['Notes', [{ id: 'journal-card', label: 'Goals & journal', ico: true }]],
+  ];
+  const nav = $('#sidebar');
+  nav.innerHTML = '';
+  for (const [title, items] of groups) {
+    nav.append(el('div', { className: 'nav-group', textContent: title }));
+    for (const it of items) {
+      const a = el('a', { className: 'nav-link', href: `#${it.id}` });
+      a.dataset.target = it.id;
+      a.innerHTML = `${it.color ? `<span class="dot" style="background:${it.color}"></span>` : '<span class="ico"></span>'}<span></span>${it.count ? `<span class="count">${it.count}</span>` : ''}`;
+      a.children[1].textContent = it.label;
+      a.addEventListener('click', e => {
+        e.preventDefault();
+        document.getElementById(it.id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        setActiveNav(it.id);
+        spyPinned = true; // keep the clicked item lit until the user scrolls themselves
+      });
+      nav.append(a);
+    }
+  }
+  spy();
+}
+
+let spyPinned = false;
+for (const t of ['wheel', 'touchmove', 'keydown', 'mousedown']) {
+  addEventListener(t, e => { if (!e.target.closest?.('.sidebar')) spyPinned = false; }, { passive: true });
+}
+function setActiveNav(id) {
+  for (const a of document.querySelectorAll('.nav-link')) {
+    const on = a.dataset.target === id;
+    a.classList.toggle('active', on);
+    if (on && innerWidth <= 900) a.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }
+}
+
+// Highlight the last section whose top has scrolled past the header
+function spy() {
+  if (spyPinned) return;
+  const links = [...document.querySelectorAll('.nav-link')];
+  if (!links.length) return;
+  const line = (innerWidth <= 900 ? 130 : 110);
+  let current = links[0].dataset.target, currentTop = -Infinity;
+  for (const a of links) {
+    const top = document.getElementById(a.dataset.target)?.getBoundingClientRect().top;
+    // Side-by-side cards share a top edge; keep the first of them
+    if (top != null && top - line <= 0 && top > currentTop + 1) { current = a.dataset.target; currentTop = top; }
+  }
+  // At the very bottom the last section may never reach the top; light it unless it shares a row with the current one
+  const last = links[links.length - 1].dataset.target;
+  const lastTop = document.getElementById(last)?.getBoundingClientRect().top;
+  if (innerHeight + scrollY >= document.body.scrollHeight - 4 && lastTop > currentTop + 1) current = last;
+  setActiveNav(current);
+}
+let spyQueued = false;
+addEventListener('scroll', () => {
+  if (spyQueued) return;
+  spyQueued = true;
+  requestAnimationFrame(() => { spyQueued = false; spy(); });
+}, { passive: true });
+
 function renderStatus() {
   const parts = [];
   if (meta.range.days) parts.push(`${meta.range.days.toLocaleString()} days of data`);
@@ -543,6 +611,7 @@ async function load() {
   $('#dash').hidden = !hasData;
   if (!hasData) return;
   await loadRange();
+  renderSidebar();
   renderJournal();
   $('#journal-date').value ||= new Date().toLocaleDateString('sv');
   $('#export-dir').textContent = meta.exportDir;
