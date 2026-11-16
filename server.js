@@ -4,9 +4,10 @@ import path from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { db, DATA_DIR, getSetting, setSetting } from './lib/db.js';
 import { METRICS, CATEGORIES } from './lib/metrics.js';
-import { importExport } from './lib/importExport.js';
+import { runImport } from './lib/runImport.js';
+import { sessionForWorkout, workoutIdsWithSets } from './lib/hevy.js';
 import { ingestHealthAutoExport } from './lib/ingest.js';
-import { buildMarkdown, buildDailyCsv, buildWorkoutsCsv, writeExports, EXPORT_DIR } from './lib/exporter.js';
+import { buildMarkdown, buildDailyCsv, buildWorkoutsCsv, buildStrengthCsv, writeExports, EXPORT_DIR } from './lib/exporter.js';
 
 const PORT = Number(process.env.PORT || 4242);
 const HOST = process.env.HOST || '127.0.0.1';
@@ -52,6 +53,7 @@ function meta() {
     workouts: db.prepare('SELECT COUNT(*) n FROM workouts').get().n,
     lastExport: last('export'),
     lastSync: last('sync'),
+    lastHevy: last('hevy'),
     exportDir: EXPORT_DIR,
     syncProtected: !!SYNC_TOKEN,
   };
@@ -72,8 +74,16 @@ async function handleApi(req, res, url) {
   }
 
   if (p === '/api/workouts') {
-    return send(res, 200, db.prepare('SELECT * FROM workouts WHERE date BETWEEN ? AND ? ORDER BY start DESC')
-      .all(q.from || '0000-00-00', q.to || '9999-99-99'));
+    const list = db.prepare('SELECT id, date, start, end, type, title, duration_min, distance_km, energy_kcal, avg_hr, max_hr, source, origin FROM workouts WHERE date BETWEEN ? AND ? ORDER BY start DESC')
+      .all(q.from || '0000-00-00', q.to || '9999-99-99');
+    const withSets = workoutIdsWithSets(list);
+    return send(res, 200, list.map(w => ({ ...w, has_sets: withSets.has(w.id) })));
+  }
+
+  if (p.startsWith('/api/workouts/')) {
+    const w = db.prepare('SELECT * FROM workouts WHERE id = ?').get(decodeURIComponent(p.slice('/api/workouts/'.length)));
+    if (!w) return send(res, 404, { error: 'Workout not found' });
+    return send(res, 200, { ...w, hr_series: w.hr_series ? JSON.parse(w.hr_series) : [], strength: sessionForWorkout(w.start) });
   }
 
   if (p === '/api/import' && req.method === 'POST') {
@@ -84,7 +94,7 @@ async function handleApi(req, res, url) {
     await pipeline(req, fs.createWriteStream(file));
     importState = { state: 'running', bytes: 0, records: 0, started: Date.now() };
     send(res, 202, { ok: true });
-    importExport(file, prog => { importState = { ...importState, ...prog }; })
+    runImport(file, prog => { importState = { ...importState, ...prog }; })
       .then(result => { importState = { state: 'done', ...result }; refreshExports(); })
       .catch(e => { console.error(e); importState = { state: 'error', error: e.message }; })
       .finally(() => fs.rm(file, { force: true }, () => {}));
@@ -131,6 +141,7 @@ async function handleApi(req, res, url) {
     return send(res, 200, buildMarkdown(opts), 'text/markdown; charset=utf-8', disp);
   }
   if (p === '/api/export/daily.csv') return send(res, 200, buildDailyCsv(), 'text/csv; charset=utf-8', { 'Content-Disposition': 'attachment; filename="daily.csv"' });
+  if (p === '/api/export/strength_sets.csv') return send(res, 200, buildStrengthCsv(), 'text/csv; charset=utf-8', { 'Content-Disposition': 'attachment; filename="strength_sets.csv"' });
   if (p === '/api/export/workouts.csv') return send(res, 200, buildWorkoutsCsv(), 'text/csv; charset=utf-8', { 'Content-Disposition': 'attachment; filename="workouts.csv"' });
 
   return send(res, 404, { error: 'Not found' });

@@ -90,12 +90,14 @@
   <dialog id="import-dialog">
     <form method="dialog" class="dlg-head"><h3>Import Apple Health export</h3><button class="icon-btn" aria-label="Close">✕</button></form>
     <label class="drop" id="drop">
-      <input type="file" id="file" accept=".zip,.xml" hidden>
-      <span class="drop-title">Drop <code>export.zip</code> here</span>
-      <span class="muted">or click to choose · zip or export.xml</span>
+      <input type="file" id="file" accept=".zip,.xml,.csv" hidden>
+      <span class="drop-title">Drop <code>export.zip</code> or a Hevy CSV here</span>
+      <span class="muted">or click to choose</span>
     </label>
     <div class="progress" id="progress" hidden><div class="bar"><i id="progress-bar"></i></div><span id="progress-text"></span></div>
-    <p class="muted small">Re-importing is safe: days are replaced, never duplicated. On iPhone: Health → profile picture → Export All Health Data.</p>
+    <p class="muted small"><b>Apple Health:</b> on iPhone, Health → profile picture → Export All Health Data.<br>
+      <b>Hevy (exercises &amp; sets):</b> Hevy → Profile → Settings → Export &amp; Import Data → Export Workouts.<br>
+      Re-importing either is safe: nothing is duplicated.</p>
   </dialog>
 
   <dialog id="claude-dialog" class="wide">
@@ -119,8 +121,26 @@
       <a class="btn ghost" id="dl-md" href="#">summary.md</a>
       <a class="btn ghost" href="/api/export/daily.csv">daily.csv</a>
       <a class="btn ghost" href="/api/export/workouts.csv">workouts.csv</a>
+      <a class="btn ghost" href="/api/export/strength_sets.csv" id="dl-strength" hidden>strength_sets.csv</a>
     </div>
     <p class="muted small">Always-current copies are saved to <code id="export-dir"></code></p>
+  </dialog>
+
+  <dialog id="workout-dialog" class="wide">
+    <form method="dialog" class="dlg-head">
+      <div>
+        <div class="eyebrow" id="wd-type"></div>
+        <h3 id="wd-title"></h3>
+        <div class="muted small" id="wd-when"></div>
+      </div>
+      <button class="icon-btn" aria-label="Close">✕</button>
+    </form>
+    <div class="stats" id="wd-stats"></div>
+    <div id="wd-hr-wrap">
+      <div class="card-head" style="margin:18px 0 0"><h3>Heart rate</h3><span class="muted small" id="wd-hr-note"></span></div>
+      <div class="chart hr" id="wd-hr"></div>
+    </div>
+    <div id="wd-strength"></div>
   </dialog>
 
   <div class="toast" id="toast" hidden></div>

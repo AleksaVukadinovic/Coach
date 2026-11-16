@@ -118,6 +118,9 @@ function roundedBar(x, y, w, h, r = 4) {
 
 const tooltip = $('#tooltip');
 function showTip(x, y, html) {
+  // Modal dialogs render in the top layer, so the tooltip must live inside the open one to stay visible.
+  const host = document.querySelector('dialog[open]') || document.body;
+  if (tooltip.parentNode !== host) host.append(tooltip);
   tooltip.innerHTML = html;
   tooltip.hidden = false;
   const w = tooltip.offsetWidth / 2;
@@ -362,8 +365,134 @@ function renderWorkouts() {
       w.energy_kcal ? `${Math.round(w.energy_kcal)} kcal` : null,
     ].filter(Boolean).join(' · ');
     const hr = w.avg_hr ? `♥ ${Math.round(w.avg_hr)}${w.max_hr ? ` / ${Math.round(w.max_hr)}` : ''} bpm` : '';
-    list.append(el('li', {}, `<div><div class="title">${w.type}</div><div class="subtle">${fmtDay(w.date, { weekday: 'short', month: 'short', day: 'numeric' })} · ${w.start.slice(11, 16)}</div></div><div class="right">${bits}<div class="subtle">${hr}</div></div>`));
+    const li = el('li', { className: 'clickable', tabIndex: 0 }, `<div><div class="title"></div><div class="subtle"></div></div><div class="right">${bits}<div class="subtle">${hr}</div></div>`);
+    li.querySelector('.title').textContent = w.title || w.type;
+    if (w.has_sets) li.querySelector('.title').append(el('span', { className: 'badge', textContent: 'SETS' }));
+    li.querySelector('.subtle').textContent = `${w.title ? w.type + ' · ' : ''}${fmtDay(w.date, { weekday: 'short', month: 'short', day: 'numeric' })} · ${w.start.slice(11, 16)}`;
+    li.addEventListener('click', () => openWorkout(w.id));
+    li.addEventListener('keydown', e => e.key === 'Enter' && openWorkout(w.id));
+    list.append(li);
   }
+}
+
+// ---------- workout detail ----------
+const SET_TAG = { warmup: 'W', dropset: 'D', failure: 'F' };
+const e1rm = (kg, reps) => (kg > 0 && reps > 0 ? (reps === 1 ? kg : kg * (1 + reps / 30)) : null);
+const fmtKg = v => (v == null ? '' : fmtNum(v, Number.isInteger(+v.toFixed(1)) ? 0 : 1));
+const statBox = (k, v, unit = '') => v == null || v === '' ? '' : `<div class="stat"><div class="k">${k}</div><div class="v">${v}${unit ? `<small>${unit}</small>` : ''}</div></div>`;
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+
+async function openWorkout(id) {
+  const w = await api(`/api/workouts/${encodeURIComponent(id)}`);
+  const dlg = $('#workout-dialog');
+  const s = w.strength;
+  $('#wd-type').textContent = w.type;
+  $('#wd-title').textContent = w.title || s?.title || w.type;
+  $('#wd-when').textContent = `${fmtDay(w.date, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })} · ${w.start.slice(11, 16)}${w.end ? `–${w.end.slice(11, 16)}` : ''} · ${w.source || ''}`;
+
+  let volume = null, workSets = null;
+  if (s) {
+    const work = s.exercises.flatMap(e => e.sets).filter(x => x.type !== 'warmup');
+    workSets = work.length;
+    volume = work.reduce((a, x) => a + (x.weight_kg || 0) * (x.reps || 0), 0);
+  }
+  $('#wd-stats').innerHTML = [
+    statBox('Duration', w.duration_min ? Math.round(w.duration_min) : null, 'min'),
+    statBox('Active energy', w.energy_kcal ? Math.round(w.energy_kcal) : null, 'kcal'),
+    statBox('Distance', w.distance_km ? w.distance_km.toFixed(2) : null, 'km'),
+    statBox('Avg heart rate', w.avg_hr ? Math.round(w.avg_hr) : null, 'bpm'),
+    statBox('Max heart rate', w.max_hr ? Math.round(w.max_hr) : null, 'bpm'),
+    s ? statBox('Exercises', s.exercises.length) : '',
+    s ? statBox('Working sets', workSets) : '',
+    s && volume ? statBox('Volume', fmtNum(volume), 'kg') : '',
+  ].join('');
+
+  const hasHr = w.hr_series?.length > 2;
+  $('#wd-hr-wrap').hidden = !hasHr;
+
+  const box = $('#wd-strength');
+  if (s) {
+    box.innerHTML = `<div class="card-head" style="margin:20px 0 10px"><h3>Exercises</h3><span class="muted small">${s.description ? esc(s.description) : 'from Hevy'}</span></div><div class="exercises"></div>`;
+    const grid = box.querySelector('.exercises');
+    for (const e of s.exercises) {
+      let n = 0;
+      const rows = e.sets.map(x => {
+        const label = SET_TAG[x.type] ? `<span class="tag ${x.type}">${SET_TAG[x.type]}</span>` : ++n;
+        const main = x.weight_kg != null && x.reps != null ? `${fmtKg(x.weight_kg)} kg × ${x.reps}`
+          : x.reps != null ? `${x.reps} reps`
+          : x.duration_s != null ? `${Math.floor(x.duration_s / 60)}:${String(Math.round(x.duration_s % 60)).padStart(2, '0')}${x.distance_km ? ` · ${x.distance_km.toFixed(2)} km` : ''}`
+          : x.distance_km != null ? `${x.distance_km.toFixed(2)} km` : '—';
+        const right = [x.rpe ? `RPE ${x.rpe}` : '', x.type !== 'warmup' && e1rm(x.weight_kg, x.reps) && x.reps > 1 ? `~${fmtKg(e1rm(x.weight_kg, x.reps))} 1RM` : ''].filter(Boolean).join(' · ');
+        return `<tr class="${x.type}"><td>${label}</td><td>${main}</td><td class="r">${right}</td></tr>`;
+      }).join('');
+      const work = e.sets.filter(x => x.type !== 'warmup');
+      const vol = work.reduce((a, x) => a + (x.weight_kg || 0) * (x.reps || 0), 0);
+      const best = Math.max(0, ...work.map(x => e1rm(x.weight_kg, x.reps) || 0));
+      const card = el('div', { className: 'exercise' }, `
+        ${e.superset_id ? '<div class="ss">SUPERSET</div>' : ''}
+        <h4>${esc(e.name)}</h4>
+        ${e.notes ? `<div class="note">${esc(e.notes)}</div>` : ''}
+        <table class="sets">${rows}</table>
+        ${vol || best ? `<div class="foot"><span>${vol ? `${fmtNum(vol)} kg volume` : ''}</span><span>${best ? `best e1RM ${fmtKg(best)} kg` : ''}</span></div>` : ''}`);
+      grid.append(card);
+    }
+  } else if (/strength|functional|core|hiit|cross/i.test(w.type) || /hevy/i.test(w.source || '')) {
+    box.innerHTML = `<div class="callout"><b>No exercise details yet.</b> Hevy only shares the summary with Apple Health. To see exercises and sets, export from Hevy (Profile → Settings → Export &amp; Import Data → Export Workouts) and drop the CSV on <b>Import</b>.</div>`;
+  } else box.innerHTML = '';
+
+  dlg.showModal();
+  if (hasHr) drawHr($('#wd-hr'), w.hr_series, w.avg_hr);
+}
+
+function drawHr(container, pts, avg) {
+  container.innerHTML = '';
+  const W = container.clientWidth, H = container.clientHeight;
+  if (W < 100) return;
+  const pad = { l: 36, r: 8, t: 8, b: 22 };
+  const iw = W - pad.l - pad.r, ih = H - pad.t - pad.b;
+  const root = svg('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'Heart rate during workout' });
+  container.append(root);
+  const tMax = pts[pts.length - 1][0] || 1;
+  const vs = pts.map(p => p[1]);
+  const ticks = niceTicks(Math.min(...vs) - 5, Math.max(...vs) + 5, 3);
+  const y0 = ticks[0], y1 = ticks[ticks.length - 1];
+  const X = t => pad.l + (t / tMax) * iw;
+  const Y = v => pad.t + ih - ((v - y0) / (y1 - y0)) * ih;
+  const axis = svg('g', { class: 'axis' });
+  for (const t of ticks) {
+    axis.append(svg('line', { class: 'gridline', x1: pad.l, x2: W - pad.r, y1: Y(t), y2: Y(t) }));
+    const tx = svg('text', { x: pad.l - 8, y: Y(t) + 4, 'text-anchor': 'end' });
+    tx.textContent = t;
+    axis.append(tx);
+  }
+  const mins = tMax / 60, stepMin = [5, 10, 15, 30, 60].find(s => mins / s <= 7) || 60;
+  for (let m = 0; m <= mins; m += stepMin) {
+    const tx = svg('text', { x: X(m * 60), y: H - 5, 'text-anchor': 'middle' });
+    tx.textContent = `${m}′`;
+    axis.append(tx);
+  }
+  root.append(axis);
+  const d = pts.map((p, i) => `${i ? 'L' : 'M'}${X(p[0]).toFixed(1)},${Y(p[1]).toFixed(1)}`).join('');
+  root.append(svg('path', { d: `${d}L${X(tMax)},${pad.t + ih}L${X(0)},${pad.t + ih}Z`, fill: 'var(--c-heart)', opacity: 0.08 }));
+  root.append(svg('path', { d, fill: 'none', stroke: 'var(--c-heart)', 'stroke-width': 2, 'stroke-linejoin': 'round' }));
+  if (avg) root.append(svg('line', { x1: pad.l, x2: W - pad.r, y1: Y(avg), y2: Y(avg), stroke: 'var(--text-3)', 'stroke-dasharray': '4 3', 'stroke-width': 1 }));
+  $('#wd-hr-note').textContent = avg ? `dashed line = average ${Math.round(avg)} bpm` : '';
+
+  const cross = svg('line', { class: 'crosshair', y1: pad.t, y2: pad.t + ih, visibility: 'hidden' });
+  const dot = svg('circle', { r: 5, fill: 'var(--c-heart)', stroke: 'var(--surface)', 'stroke-width': 2, visibility: 'hidden' });
+  const hit = svg('rect', { x: pad.l, y: pad.t, width: iw, height: ih, fill: 'transparent' });
+  root.append(cross, dot, hit);
+  hit.addEventListener('mousemove', e => {
+    const r = root.getBoundingClientRect();
+    const t = ((e.clientX - r.left) * (W / r.width) - pad.l) / iw * tMax;
+    let best = pts[0];
+    for (const p of pts) if (Math.abs(p[0] - t) < Math.abs(best[0] - t)) best = p;
+    cross.setAttribute('x1', X(best[0])); cross.setAttribute('x2', X(best[0])); cross.setAttribute('visibility', 'visible');
+    dot.setAttribute('cx', X(best[0])); dot.setAttribute('cy', Y(best[1])); dot.setAttribute('visibility', 'visible');
+    const mm = Math.floor(best[0] / 60), ss = String(best[0] % 60).padStart(2, '0');
+    showTip(r.left + X(best[0]) * (r.width / W), r.top + Y(best[1]) * (r.height / H), `<div class="tt-date">${mm}:${ss} in</div><b>${Math.round(best[1])} bpm</b>`);
+  });
+  hit.addEventListener('mouseleave', () => { hideTip(); cross.setAttribute('visibility', 'hidden'); dot.setAttribute('visibility', 'hidden'); });
 }
 
 async function renderJournal() {
@@ -417,6 +546,7 @@ async function load() {
   renderJournal();
   $('#journal-date').value ||= new Date().toLocaleDateString('sv');
   $('#export-dir').textContent = meta.exportDir;
+  $('#dl-strength').hidden = !meta.lastHevy;
 }
 
 // ---------- interactions ----------
@@ -497,7 +627,9 @@ async function poll() {
   }
   if (s.state === 'error') return setProgress(0, `Import failed: ${s.error}`);
   if (s.state === 'done') {
-    setProgress(100, `Done · ${s.records.toLocaleString()} records → ${s.days} days, ${s.workouts} workouts`);
+    setProgress(100, s.kind === 'hevy'
+      ? `Done · ${s.sessions} Hevy sessions, ${s.sets.toLocaleString()} sets`
+      : `Done · ${s.records.toLocaleString()} records → ${s.days} days, ${s.workouts} workouts`);
     await load();
     setTimeout(() => importDlg.close(), 1400);
   }

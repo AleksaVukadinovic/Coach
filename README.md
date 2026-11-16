@@ -32,6 +32,15 @@ npm run import -- ~/Downloads/export.zip
 
 Re-importing is safe because each day+metric is replaced, never duplicated. Repeat the export whenever you want to catch up.
 
+### Strength workouts from Hevy
+
+Hevy only sends Apple Health a summary of each workout: its title, duration and calories. To see every exercise and set:
+
+1. In Hevy go to **Profile → Settings → Export & Import Data → Export Workouts**, and save the CSV to your Mac.
+2. Drop the CSV on **Import**, or run `npm run import -- ~/Downloads/workouts.csv`.
+
+Each Hevy session is matched to its Apple Health workout by start time, within 10 minutes. Click any workout to see its heart-rate trace, and, for strength sessions, its exercises, sets, RPE, volume and estimated 1RM. Re-export and re-import whenever you like.
+
 ### 2. Live sync (optional, automatic)
 
 The [Health Auto Export](https://apps.apple.com/app/health-auto-export-json-csv/id1115567069) iOS app (paid tier) can POST your data to Coach on a schedule.
@@ -58,6 +67,9 @@ Every import, sync, journal entry or goals edit regenerates these files:
 | `data/export/health_summary.md` | Definitions, your goals, an overview table (7/30/90/365-day averages and how they changed), the last 30 days day by day, weekly and monthly averages, workouts, and journal notes. Usually 10–20k tokens. |
 | `data/export/daily.csv` | Full history, one row per day and one column per metric (units in the headers). |
 | `data/export/workouts.csv` | Every workout. |
+| `data/export/strength_sets.csv` | Every Hevy set: exercise, weight, reps, RPE. Written once you import a Hevy CSV. |
+
+The Markdown digest also gets a **Strength training** section once Hevy data is in. It lists recent sessions set by set, and a per-exercise progress table with sessions, top set and best estimated 1RM for the last 30 days compared with 31–90 days ago.
 
 The easiest way to use them is to click **For Claude → Copy with coach prompt** and paste into a chat. You can also attach the files directly, or add them to a Claude Project's knowledge so every conversation starts with your latest data. Use the CSVs when you want Claude to analyse older history in detail.
 
